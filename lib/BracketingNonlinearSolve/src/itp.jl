@@ -101,10 +101,21 @@ function SciMLBase.__solve(
     end
     T0 = zero(fl)
 
+    show_trace = get(kwargs, :show_trace, Val(false))
+    trace_level = get(kwargs, :trace_level, NonlinearSolveBase.TraceMinimal())
+    store_trace = get(kwargs, :store_trace, Val(false))
+    trace = NonlinearSolveBase.init_nonlinearsolve_trace(
+        prob, alg, (left, right), (fl, fr), nothing, span;
+        show_trace, trace_level, store_trace
+    )
+
     i = 1
     while i ≤ maxiters
         span = right - left
         mid = (left + right) / 2
+        if mid == left || mid == right
+            return build_bracketing_solution(prob, alg, left, fl, left, right, ReturnCode.FloatingPointLimit)
+        end
         r = ϵ_s - (span / 2)
 
         x_f = left + span * (fl / (fl - fr))  # Interpolation Step
@@ -115,6 +126,9 @@ function SciMLBase.__solve(
         xt = ifelse(δ ≤ abs(diff), x_f + copysign(δ, diff), mid)  # Truncation Step
 
         xp = ifelse(abs(xt - mid) ≤ r, xt, mid - copysign(r, diff))  # Projection Step
+        if xp <= left || xp >= right
+            xp = mid
+        end
         if span < 2ϵ
             return build_bracketing_solution(prob, alg, xt, f(xt), left, right, ReturnCode.Success)
         end
@@ -129,6 +143,7 @@ function SciMLBase.__solve(
         end
 
         i += 1
+        NonlinearSolveBase.update_trace!(trace, i, (left, right), (fl, fr), nothing, span)
         ϵ_s /= 2
 
         if nextfloat(left) == right
